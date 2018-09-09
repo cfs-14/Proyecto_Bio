@@ -895,7 +895,8 @@ roi_face = image.copy()
 temp_image = roi_face.copy()
 # show_image(roi_face, 'Entire Img')
 
-roi_face = temp_image[int(bestY-(bestY*0.25)):int(bestEndY+(bestY*0.25)) , int(bestX-(bestX*0.25)):int(bestEndX+(bestX*0.25))]
+cropX, cropEndX, cropY, cropEndY = int(bestX-(bestX*0.25)), int(bestEndX+(bestX*0.25)), int(bestY-(bestY*0.25)), int(bestEndY+(bestY*0.25))
+roi_face = temp_image[cropY: cropEndY, cropX:cropEndX]
 
 show_image_destroy(roi_face, 'Face_ROI')
 
