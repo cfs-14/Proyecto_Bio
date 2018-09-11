@@ -5,9 +5,20 @@ import itertools as it
 import math
 import sys
 ##
-    ##Do the eye handling
+    ##
+    
+    ##(!) Not the best eyes are getting picked, esp horizontally.
+        ##Fixed. min_Dist_L & R were not getting updated when new smallest found in num_eyes > 2.
+        
+    ##(!)If possible, fix the small inconsistency using point_rotation_calc to get to the eyes. 
+        ##Consider the compensation used in the mat that accomodates the rotated image; this is probably the reason for the discrepancy.
+        ##(!) Tried changing point_rotation_calc, using round but didn't work.
+    ##Do the eye handling    
+        
+        ##ctrl home goes to top of page
+        ##higlighting whole line and ctrl+shift up or down swaps line.
         ##(!) when calling transform_image(), send the original image, but update the left_eye and right_eye so that we can crop from the
-            ##original image and get a full image w/o showing missing cropped sides. See (C)
+            ##original image and get a full image w/o showing missing cropped sides. See (C) #Check Works now. 
         ## Make another transform_image, that keeps the ratio of the head vertically and horizontally, not just the face, so as to preserve the whole head.
         
         ##(Opt.?) perhaps callibrate the face rotation? Works fine, but overshoots, perhaps inherent in this face detection.
@@ -557,8 +568,8 @@ def point_rotation_calc(image, angle, point, pivot=None):
     # print(rotation_mat)        
     
     # find the new width and height bounds
-    bound_w = int( math.ceil(height * abs_sin + width * abs_cos+2)) # hypotenuse* math.cos(angle - math.atan(height/width)
-    bound_h = int( math.ceil(height * abs_cos + width * abs_sin+2)) #  hypotenuse* math.cos(angle - math.atan(width/height)    
+    bound_w = int( math.floor(height * abs_sin + width * abs_cos+2)) # hypotenuse* math.cos(angle - math.atan(height/width)
+    bound_h = int( math.floor(height * abs_cos + width * abs_sin+2)) #  hypotenuse* math.cos(angle - math.atan(width/height)    
     
     new_center = (bound_w/2, bound_h/2)
     
@@ -636,8 +647,68 @@ def get_centerpoint(mat, angle):
     rotation_mat[1, 2] += bound_h/2 - image_center[1]
     
     return (int(rotation_mat[0, 2]), int(rotation_mat[1, 2]))#circle argument expects ints
+    
 ####################################
+def size_rotated_image(mat, angle, pivot=None): #Info: positive angle in degrees rotates counter-clockwise.
+    """
+    Finds the dimensions of an image rotated by angle.
+    """
+    radians_angle = math.radians(-1*angle) ##(!)(?) why -1* again?
+    
+    #if no pivot given, make pivot the center of image.
+    if pivot is None:
+        pivot = (mat.shape[1]/2, mat.shape[0]/2)
+    
+    width, height = mat.shape[1], mat.shape[0]
 
+    center = (width/2, height/2)
+    #image_center = pivot #(mat.shape[1]/2, mat.shape[0]/2) # getRotationMatrix2D needs coordinates in reverse order (width, height) compared to shape    
+
+    image_copy = mat.copy()
+    
+    # #draw the pivot point.    
+    # cv2.circle(image_copy, pivot, 2, 
+     # (0, 255, 100), -1)
+    
+    # show_image(image_copy, 'Pivot') #_destroy
+
+    #commented out
+    # print('Pivot')
+    # print(pivot)
+    # print('Angulo')
+    # print(angle)
+    
+    # M = np.float32([[1,0,100],[0,1,50]])
+    # dst = cv.warpAffine(img,M,(cols,rows))
+    
+    #(Info:) matrix = cv2.getRotationMatrix2D((cols/2,rows/2),90,1)
+    #blank_rmat = cv2.getRotationMatrix2D((width/2, height/2), 0, 1.)
+    ##
+    # print('Orig Rotation Matrix')
+    # print(blank_rmat)
+    
+    ##(ch) pivot -> center
+    rotation_mat = cv2.getRotationMatrix2D(pivot, angle, 1.)#(image_copy.shape[1]/2, image_copy.shape[0]/2), angle, 1.)
+
+    # rotation calculates the cos and sin, taking absolutes of those.
+    
+    abs_cos = abs(rotation_mat[0,0]) # #math.cos(angle - 45)
+    abs_sin = abs(rotation_mat[0,1]) #  math.sin(angle - 45))     
+    
+    # find the new width and height bounds
+    bound_w = int( math.ceil(height * abs_sin + width * abs_cos+2)) # hypotenuse* math.cos(angle - math.atan(height/width)
+    bound_h = int( math.ceil(height * abs_cos + width * abs_sin+2)) #  hypotenuse* math.cos(angle - math.atan(width/height)    
+    
+    #new_center = (bound_w/2, bound_h/2)
+    return (bound_w, bound_h)
+#########################    
+def get_diff_translation(point1, point2):
+    return (point2[0]-point1[0], point2[1]-point1[1])
+
+def translate_2D_point(point1, translation):
+    return (point1[0]+translation[0], point1[1]+translation[1])    
+#########################
+    
 def show_image(image, name='Formiga', resize=False):
 
     cv2.imshow(name, image)
@@ -887,27 +958,59 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)): #range(0, 1):#(10,
 ##End going through angles, so went through all angles of this particular image
     ## in the sequence of images.
 #We pretend that we went through the entire sequence, so we have the best image overall.
+##best_face is the face upright.
+# show_image(best_face, '1st Best_Face&Angle')
 
-show_image_destroy(best_face, 'Best_Face_Found')
-
-roi_face = image.copy()
-
+##We want an expanded version of the face in order to more accurately find the actual best angle
+#make a mat to hold the expanded face roi.
+roi_face = rotate_image(image.copy(), best_angle)
+##make a copy of prev mat to crop from.
 temp_image = roi_face.copy()
 # show_image(roi_face, 'Entire Img')
 
+#crop the expanded face.
 cropX, cropEndX, cropY, cropEndY = int(bestX-(bestX*0.25)), int(bestEndX+(bestX*0.25)), int(bestY-(bestY*0.25)), int(bestEndY+(bestY*0.25))
 roi_face = temp_image[cropY: cropEndY, cropX:cropEndX]
+best_face = roi_face
 
-show_image_destroy(roi_face, 'Face_ROI')
+#show the cropped face and the entire image w/ a rect of roi to see if they're matching.
+# show_image(roi_face, 'Best Face&Angle Expanded')
+
+##We can either send the face w/ the 1st best_angle applied, or we reset it (angle == 0) , which doesn't make sense.
+# roi_face = rotate_image(roi_face, -1*best_angle)
+# #face expanded reset
+# show_image(roi_face, 'Prev Face Expanded w/o Angle')
+
+# # nx, ny = point_rotation_calc(roi_face, -1*best_angle, (cropX, cropY))#rotate_point(
+# # ##(C) (!) Here now
+# # nex, ney = point_rotation_calc(roi_face, -1*best_angle, (cropEndX, cropEndY))
+
+# # imt = image.copy()[ny: ney, nx:nex]
+# # show_image(imt, 'Matching')
+
+
+
+##show rect of roi
+# cv2.rectangle(temp_image, (cropX, cropY), (cropEndX, cropEndY), (0, 200, 200), 2)
+# show_image(temp_image, 'Face Rect')
+# temp_image = rotate_image(temp_image, best_angle)
+# show_image(temp_image, 'Expanded image w/ angle')
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
+
+
 
 (bx, by, bex, bey) = (bestX, bestY, bestEndX, bestEndY)
 
 drawing_copy = roi_face.copy()
 
 best_confidence_original = 0.0
+best_angle_original = best_angle
+
 
 print("Best Confidence Original: {:.2f}%".format(best_confidence))
 
+##Find the best angle for this face.
 for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
     
     rotated_image = rotate_image(roi_face, angle)
@@ -951,8 +1054,8 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
             # print("Size of orig Img: {}, {}".format(rotated_image.shape[1], rotated_image.shape[0]))
             (sx, sy, wx, hy) = box.astype("int")
             
-            # print("startX: {}, endX: {}, startY: {}, endY: {}".format(sx, sy, wx, hy))
-            #proximity y factor
+            # print("startX: {}, endX: {}, startY: {}, endY: {}".format(sx, sy, wx, hy))            
+            #we make sure to get the original unmodified confidence by checking to see if it's at its original angle, and if the box is w/in bounds.
             if angle == 0 and confidence*100 > best_confidence_original and (0 < sx and wx < rotated_image.shape[1]) and (0 < sy and hy < rotated_image.shape[0]):
                 best_confidence_original = confidence*100
                 print("Best Confidence Original New: {:.2f}%".format(confidence*100))
@@ -961,7 +1064,7 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
             # if (startY + (endY-startY)/2) >= centerY:
                 # proximity_factor = 1.2        
         
-            ##Normal confidence is all that matters.
+            ##unaugmented confidence is used here.
             
             # confidence_plus = confidence*100 * ((1 - (abs(centerX-(startX+(endX-startX)))/float(centerX)))*1.5) * (1 - (abs(centerY-(startY+(endY-startY)))/float(centerY)))*proximity_factor* ((endX-startX)/ float(centerX/2)) * ((endY-startY)/ float(centerY/2))
             
@@ -983,7 +1086,7 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
             y = sy - 10 if sy - 10 > 10 else sy + 10
             
             #check if this detection is 'better' than our curr best.
-            # if best_confidence < confidence:
+            # if best_confidence < confidence && bounding box w/in bounds (valid):
             if confidence*100 > best_confidence_original and (0 < sx and wx < rotated_image.shape[1]) and (0 < sy and hy < rotated_image.shape[0]):
                 
                 print("Found a better confidence: {:.2f}%".format(confidence*100))
@@ -996,9 +1099,9 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
                 bx, by, bex, bey = sx, sy, wx, hy
                 
                 #startX-int(abs((endX-startX)*0.2)), startY-int(abs((endY-startY)*0.2)), endX+int(abs((endX-startX)*0.2)), endY+int(abs((endY-startY)*0.2))
-                best_face = rotated_image[by:bey, bx:bex] #rotate_image(image, best_angle+angle)[bx:bey, bx:bex] #startY:endY, startX:endX] #rotated_image[startY:endY, startX:endX] 
+                best_face = rotated_image[by:bey, bx:bex] #rotated_image #rotate_image(image, best_angle+angle)[bx:bey, bx:bex] #startY:endY, startX:endX] #rotated_image[startY:endY, startX:endX] 
                 best_confidence_original = confidence*100
-                best_angle = angle ##best_angle+angle                
+                best_angle = best_angle_original+angle #angle ##best_angle+angle                
             
             #draw the rectangle around the face
             
@@ -1028,11 +1131,121 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
     ##Print image w/ best rotation to match the angle of best_face.
     ##Use temp_image[int(bestY-(bestY*0.25)):int(bestEndY+(bestY*0.25)) , int(bestX-(bestX*0.25)):int(bestEndX+(bestX*0.25))] && bx, by, ... to match
     ##the eyes in rotated image.
-    
-    
-show_image_destroy(best_face, "New Best Face")
+
+##One solution, is after noticing that best_face becomes a crop of the rotate roi_face, which is already a cropped face.
+    ##So we can either save best_face as the rotated roi inside the above part, or we save it out here. I think it can just be done inside.
+
+#we locate the center_point of roi_face (pivot)    
+roi_copy = roi_face.copy()
+cv2.circle(roi_copy, (roi_copy.shape[1]/2, roi_copy.shape[0]/2), 4, (0, 0, 0), -1)
+cv2.circle(roi_copy, (roi_copy.shape[1]/2, roi_copy.shape[0]/2), 2, (200, 250, 25), -1)
+show_image(roi_copy, "Roi pivot")
 
 
+##Now we try to match the same in the image, but it will match.
+supp_angle = best_angle - best_angle_original
+image_roi = rotate_image(image, best_angle_original)
+cv2.circle(image_roi, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)), 4, (0, 0, 0), -1)
+cv2.circle(image_roi, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)), 2, (200, 250, 25), -1)
+show_image(image_roi, "Img roi pivot")
+
+##Now we try to rotate the point correctly in roi_face
+# # point_rotation_calc(image, angle, point, pivot. piont.
+center_r = point_rotation_calc(roi_face, supp_angle, (roi_face.shape[1]/2, roi_face.shape[0]/2))
+new_roi = rotate_image(roi_face, supp_angle)
+
+cv2.circle(new_roi, center_r, 4, (0, 0, 0), -1)
+cv2.circle(new_roi, center_r, 2, (200, 250, 25), -1)
+
+show_image(new_roi, "Rotated pivot")
+
+##Now we rotate the point try to find it in the other thing
+##perhaps find how (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)) goes to the point. True.
+##We can try keeping the points of the original rect rotated as well so to find where they align
+##The cheap way is the way below. 
+
+new_pt = point_rotation_calc(image_roi, supp_angle, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)))
+im_test = rotate_image(image_roi, supp_angle)
+cv2.circle(im_test, new_pt, 4, (0, 0, 0), -1)
+cv2.circle(im_test, new_pt, 2, (200, 250, 25), -1)
+show_image(im_test, "New point")
+
+#Now we get the translation to apply it to image_roi.
+# t_point = get_diff_translation((roi_face.shape[1]/2, roi_face.shape[0]/2), center_r)
+
+# r_center = translate_2D_point((cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)) , t_point)
+
+# im_test = rotate_image(image, best_angle)
+# cv2.circle(im_test, r_center, 4, (0, 0, 0), -1)
+# cv2.circle(im_test, r_center, 2, (250, 0, 0), -1)
+# cv2.circle(im_test, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)), 4, (0, 0, 0), -1)
+# cv2.circle(im_test, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)), 2, (0, 250, 0), -1)
+
+# show_image(im_test, "Aligned point in Image")
+
+
+
+##A
+# # show_image(roi_face, "New ROI face?")
+# #We show the new best face angle and all. Will just be expanded face rotated.
+# show_image(best_face, "New Best Face w/ new angle")
+# #Trying to match the rotation of the best_face.
+
+# test_image = rotate_image(image, best_angle)
+# ##roi_face starts at a different angle.
+# test_image2 = rotate_image(roi_face, best_angle - best_angle_original)
+
+# #we figure the center of rotated roi
+# (tw, th) = size_rotated_image(roi_face.copy(), best_angle - best_angle_original)
+# cv2.circle(test_image2, (tw/2, th/2), 3, (0, 0, 0), -1)
+# cv2.circle(test_image2, (tw/2, th/2), 2, (250, 0, 150), -1)
+
+# show_image(test_image2, "Center of roi_face")
+
+# center_o = (cropX+((cropEndX-cropX)/2), cropY+((cropEndY-cropY)/2))
+# # cv2.circle(test_image, center_o, 4, (200, 200, 0), -1)
+
+
+# #Try to get the same center in the entire image.
+# # cv2.circle(test_image, (center_o), 3, (0, 0, 0), -1)
+# # cv2.circle(test_image, (center_o), 2, (200, 100, 100), -1)
+# ##Then I should try to align the centers.
+# # show_image(test_image, 'Same center test')
+
+# #Let me try to trace the outline of the roi
+# # show_image(roi_face, "ROI")
+
+# roi_outline = rotate_image(image, best_angle_original)
+# ##Here Now, trying to get the center correctly.
+
+# ti = rotate_image(image, best_angle)
+
+# # point_rotation_calc(image, angle, point, pivot. piont.
+# new_c = point_rotation_calc(roi_outline, best_angle-best_angle_original, center_o)
+
+# cv2.circle(ti, new_c, 3, (0, 0, 0), -1)
+# cv2.circle(ti, new_c, 2, (200, 0, 200), -1)
+
+# # cv2.rectangle(roi_outline, (cropX, cropY), (cropEndX, cropEndY), (200, 200, 200), 2)
+# show_image(ti, "Center Test")
+##A
+
+##(!) vv check if .copy() is necessary in function, if value is modified.
+# show_image(rotate_image(roi_face, best_angle-best_angle_original), 'Trying to Match rotation 2')
+
+
+#cv2.rectangle(best_face, (0, 0),(best_face.shape[0], best_face.shape[1]),(0, 255, 0), 2)  
+# cv2.rectangle(test_image, (int(center_o[0]-(tw/2)+bx), int(center_o[1]-(th/2)+by)), (int(center_o[0]-(tw/2)+bex), int(center_o[1]-(th/2)+bey)), 
+    # (200, 200, 0), 2)
+
+# show_image(rotate_image(image.copy(), best_angle), "Trying to match rotation.")
+# show_image(rotate_image(roi_face, best_angle), "First Rotated after new angle")
+
+
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+
+##
 
     
     # if best_confidence < confidence_plus:
@@ -1096,6 +1309,7 @@ min_dist_R = best_face.shape[1]
 left_eye = None #(image_copy.shape[1], image_copy.shape[0])
 right_eye = None #(image_copy.shape[1], image_copy.shape[0])
 # for eye_number in eye_detections
+id = 0
 
 while total_eyes != 2:
     #detect eyes
@@ -1308,24 +1522,39 @@ while total_eyes != 2:
         
         # if sf < 1.5:
             # sf += 0.1
-            
+        
         for (ex, ey, ew, eh) in eye_detections:
             ##Epsilon is a percentage to be combined w/ the width of the 'face' 
             
-            print("\nDist L : {}".format(distance((ex+(ew/2), ey+(eh/2)), (best_face.shape[1]/4, (best_face.shape[0]*3)/8))))
+            print("Eye #: {}".format(id))
+            
+            print("Dist L : {}".format(distance((ex+(ew/2), ey+(eh/2)), (best_face.shape[1]/4, (best_face.shape[0]*3)/8))))
             print("Dist R: {}".format(distance((ex+(ew/2), ey+(eh/2)), ((best_face.shape[1]*3)/4, (best_face.shape[0]*3)/8))))
-            print("To beat: {}".format(.25*best_face.shape[1]))
+            print("To beat L: {}".format(min_dist_L)) #.25*best_face.shape[1]))
+            print("To beat R: {}".format(min_dist_R)) 
             
             #if w/in epsilon distance of avg_eye_L
+            
+            cv2.circle(drawing_copy, (ex+(ew/2), ey+(eh/2)), 3, 
+                (0, 0, 0), -1)
+            cv2.circle(drawing_copy, (ex+(ew/2), ey+(eh/2)), 2, 
+                (255, 255, 0), -1)
+
+            show_image_destroy(drawing_copy, "Eye {}".format(id))
+            id += 1
+            drawing_copy = roi_gray.copy()
+            
             if distance((ex+(ew/2), ey+(eh/2)), (best_face.shape[1]/4, (best_face.shape[0]*3)/8)) < .25*best_face.shape[1]: #Epsilon
                 this_dist = distance((ex+(ew/2), ey+(eh/2)), (best_face.shape[1]/4, (best_face.shape[0]*3)/8))
-                if this_dist < min_dist: #if it's closer than our previous left_eye, we replace it.
+                if this_dist < min_dist_L: #if it's closer than our previous left_eye, we replace it.
                     left_eye = (ex+(ew/2), ey+(eh/2))
+                    min_dist_L = this_dist
             #if w/in epsilon distance of avg_eye_R
             elif distance((ex+(ew/2), ey+(eh/2)), ((best_face.shape[1]*3)/4, (best_face.shape[0]*3)/8)) < .25*best_face.shape[1]: #Epsilon
                 this_dist = distance((ex+(ew/2), ey+(eh/2)), ((best_face.shape[1]*3)/4, (best_face.shape[0]*3)/8))
-                if this_dist < min_dist:
-                    right_eye = (ex+(ew/2), ey+(eh/2))                
+                if this_dist < min_dist_R:  
+                    right_eye = (ex+(ew/2), ey+(eh/2))     
+                    min_dist_R = this_dist
             elif sf < 1.5:
                 sf += 0.1
             else:
@@ -1369,6 +1598,7 @@ print("\nLeft Eye: {}, {} \t Right Eye: {}, {}".format(left_eye[0], left_eye[1],
 
 im_copy = best_face.copy()
 
+##Draw the left and right eyes' location.
 cv2.circle(im_copy, left_eye, 3,
     (250, 250, 250), -1)
 cv2.circle(im_copy, left_eye, 2,
@@ -1376,10 +1606,26 @@ cv2.circle(im_copy, left_eye, 2,
     
 cv2.circle(im_copy, right_eye, 2,
     (250, 250, 0), -1)
-    
-show_image_destroy(im_copy, "Eyes that should be")
-    
-    
+
+##    
+show_image(im_copy, "Eyes on Best_Face")
+
+n_leye = ((new_pt[0] - center_r[0]) + bx + left_eye[0], (new_pt[1] - center_r[1]) + by +left_eye[1])
+n_reye = ((new_pt[0] - center_r[0]) + bx + right_eye[0], (new_pt[1] - center_r[1]) + by +right_eye[1])
+
+cv2.circle(im_test, ((new_pt[0] - center_r[0]) + bx + left_eye[0], (new_pt[1] - center_r[1]) + by +left_eye[1]), 3,
+    (0, 0, 0), -1)
+cv2.circle(im_test, ((new_pt[0] - center_r[0]) + bx + left_eye[0], (new_pt[1] - center_r[1]) + by +left_eye[1]), 2,
+    (250, 250, 250), -1)    
+cv2.circle(im_test, ((new_pt[0] - center_r[0]) + bx + right_eye[0], (new_pt[1] - center_r[1]) + by +right_eye[1]), 3,
+    (0, 0, 0), -1) 
+cv2.circle(im_test, ((new_pt[0] - center_r[0]) + bx + right_eye[0], (new_pt[1] - center_r[1]) + by +right_eye[1]), 2,
+    (250, 250, 250), -1)      
+
+
+show_image(im_test, "Eyes on Image")
+
+
 # if not eye_detections: #any(map(len, eye_detections)): #passes if any of the contained items are not empty
     # interim_count_eyes = 0
 # else:
@@ -1387,9 +1633,30 @@ show_image_destroy(im_copy, "Eyes that should be")
     # print(eye_detections.ndim)
 
 
-image_copy = best_face.copy()
+# image_copy = best_face.copy()
 
-eye_test_copy = rotate_image(image, best_angle)
+# # eye_test_copy = rotate_image(image, best_angle)
+
+# ##show entire image, rotated & with eyes.
+# rimage = rotate_image(image, best_angle)  
+
+# cv2.rectangle(rimage, (cropX, cropY), (cropEndX, cropEndY),
+    # (200, 0, 200), 2)
+
+# cv2.circle(rimage, (left_eye[0]+cropX, left_eye[1]+cropY), 3,
+    # (250, 250, 250), -1)
+# cv2.circle(rimage, (left_eye[0]+cropX, left_eye[1]+cropY), 2,
+    # (0, 250, 250), -1)
+    
+# cv2.circle(rimage, (right_eye[0]+cropX, right_eye[1]+cropY), 3,
+    # (250, 250, 250), -1)
+# cv2.circle(rimage, (right_eye[0]+cropX, right_eye[1]+cropY), 2,
+    # (0, 250, 250), -1)    
+    
+# show_image(rimage, "Im_Rotation")
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+##
 
 ######(!) As a precaution can even have the default values for the eyes here. but not equal so that dist_o != 0.
 # # left_eye = (image_copy.shape[1], image_copy.shape[0])
@@ -1464,8 +1731,8 @@ eye_test_copy = rotate_image(image, best_angle)
 ##cropped_face = transform_image(eye_test_copy, (left_eye[0]+bestX, left_eye[1]+bestY), (right_eye[0]+bestX, right_eye[1]+bestY), (.3, .3))
 ##cropped_face = transform_image(eye_test_copy, (left_eye[0]+bx+bestX, left_eye[1]+by+bestY), (right_eye[0]+bx+bestX, right_eye[1]+by+bestY), (.3, .3))
 
-cropped_face = transform_image(best_face, left_eye, right_eye, (.3, .3))
-
+# cropped_face = transform_image(fimage, left_eye, right_eye, (.3, .3))
+cropped_face = transform_image(im_test, n_leye, n_reye, (.3, .3))
 
 ##(!)(A)(i) The prob is that w/ any of the percentages, we can't get the top of the head and the bottom of the head. Perhaps I can use dist_o to find a ratio
 ##for how much above and below the bounding box should be to encompass the top of the head as well. 
