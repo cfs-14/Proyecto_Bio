@@ -6,6 +6,9 @@ import math
 import sys
 ##
     ##This weekend install opencv on raspberry pi.
+    ##"Eyes on Image" is wrong
+    
+    ##One problem is that if the confidence of the original is the best, then it needs to work with that.
     
     ##Doesn't work w/ line of people: wrong eyes & wrong roi_gray & wrong final image goes to bottom right. esp. bc to detect eyes, doesn't use the face detected on last rotation check.
     ##(!)(Done) Not the best eyes are getting picked, esp horizontally.
@@ -755,12 +758,13 @@ eye_detector = cv2.CascadeClassifier('C:/Users/gabav/Desktop/CarlosDirectory/Pyt
 # Load the input image and construct an input blob for the image
 # by resizing to a fixed 300x300 pixels and then normalizing it
 ##imageOne = cv2.imread('C:\Users\gabav\Desktop\CarlosDirectory\CFS_Images\line_ppl.jpg')
-image = cv2.imread('C:/Users/gabav/Desktop/CarlosDirectory/CFS_Images/line_ppl.jpg') #walter_angle.jpg') #Arnie_MultiEyed_R.jpg') #No_Eyes_Arnie.jpg') #Arnie.jpg') #walter_twizzler.jpg') #Arnie_Triclops.jpg') #2ndPic.jpg') # #walter_twizzler.jpg') ##walter.jpg') # #Arnie.jpg') # #   # # #line_ppl.jpg') #Arnie.jpg') # # #grp_ppl_2.jpg')
+image = cv2.imread('C:/Users/gabav/Desktop/CarlosDirectory/CFS_Images/walter_angle.jpg') #line_ppl.jpg') # #Arnie_MultiEyed_R.jpg') #No_Eyes_Arnie.jpg') #Arnie.jpg') #walter_twizzler.jpg') #Arnie_Triclops.jpg') #2ndPic.jpg') # #walter_twizzler.jpg') ##walter.jpg') # #Arnie.jpg') # #   # # #line_ppl.jpg') #Arnie.jpg') # # #grp_ppl_2.jpg')
 # just get the height and width of the image.
 #(Optimization) Make the below a single unit/class.
 best_face = np.zeros(1)
 best_angle = 0
 best_confidence = 0.0
+best_confidence_plus = 0.0
 bestX, bestY, bestEndX , bestEndY = 0, 0, 0, 0
 #When we use sec_best_face, we check if we even found a second best face.
 sec_best_face = np.zeros(1)
@@ -861,7 +865,7 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)): #range(0, 1):#(10,
             
             #check if this detection is 'better' than our curr best.
             # if best_confidence < confidence:
-            if best_confidence < confidence_plus:
+            if best_confidence_plus < confidence_plus:
                 #save the prev best face (2nd best face)
                 sec_best_face = best_face
                 sec_best_angle = best_angle
@@ -871,7 +875,8 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)): #range(0, 1):#(10,
                 bestX, bestY, bestEndX, bestEndY = startX, startY, endX, endY
                 #startX-int(abs((endX-startX)*0.2)), startY-int(abs((endY-startY)*0.2)), endX+int(abs((endX-startX)*0.2)), endY+int(abs((endY-startY)*0.2))
                 best_face = rotate_image(image, angle)[bestY:bestEndY, bestX:bestEndX] #startY:endY, startX:endX] #rotated_image[startY:endY, startX:endX] 
-                best_confidence = confidence_plus
+                best_confidence_plus = confidence_plus
+                best_confidence = confidence*100
                 best_angle = angle       
                 
                 foundNew = True
@@ -966,7 +971,7 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)): #range(0, 1):#(10,
     ## in the sequence of images.
 #We pretend that we went through the entire sequence, so we have the best image overall.
 ##best_face is the face upright.
-# show_image(best_face, '1st Best_Face&Angle')
+show_image(best_face, '1st Best_Face&Angle')
 
 ##We want an expanded version of the face in order to more accurately find the actual best angle
 #make a mat to hold the expanded face roi.
@@ -976,6 +981,8 @@ temp_image = roi_face.copy()
 # show_image(roi_face, 'Entire Img')
 
 #crop the expanded face.
+
+
 cropX, cropEndX, cropY, cropEndY = int(bestX-(bestX*0.25)), int(bestEndX+(bestX*0.25)), int(bestY-(bestY*0.25)), int(bestEndY+(bestY*0.25))
 roi_face = temp_image[cropY: cropEndY, cropX:cropEndX]
 best_face = roi_face
@@ -1011,11 +1018,11 @@ best_face = roi_face
 
 drawing_copy = roi_face.copy()
 
-best_confidence_original = 0.0
+best_confidence_original = best_confidence
 best_angle_original = best_angle
 
 
-print("Best Confidence Original: {:.2f}%".format(best_confidence))
+print("\nBest Confidence Original: {:.2f}%".format(best_confidence_original))
 
 ##Find the best angle for this face.
 for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
@@ -1061,11 +1068,18 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
             # print("Size of orig Img: {}, {}".format(rotated_image.shape[1], rotated_image.shape[0]))
             (sx, sy, wx, hy) = box.astype("int")
             
+            drawing_copy = rotated_image.copy()
+            cv2.rectangle(drawing_copy, (sx, sy), (sx+wx, sy+hy), (250, 0, 250), 2)
+            show_image_destroy(drawing_copy, "Face Detected")
+            drawing_copy = rotated_image.copy()
+
+            
             # print("startX: {}, endX: {}, startY: {}, endY: {}".format(sx, sy, wx, hy))            
+            ##(!) We don't guess original confidence, instead we save it. 
             #we make sure to get the original unmodified confidence by checking to see if it's at its original angle, and if the box is w/in bounds.
-            if angle == 0 and confidence*100 > best_confidence_original and (0 < sx and wx < rotated_image.shape[1]) and (0 < sy and hy < rotated_image.shape[0]):
-                best_confidence_original = confidence*100
-                print("Best Confidence Original New: {:.2f}%".format(confidence*100))
+            # # if angle == 0 and confidence*100 > best_confidence and (0 < sx and sx+wx < rotated_image.shape[1]) and (0 < sy and sy+hy < rotated_image.shape[0]):
+                # # best_confidence = confidence*100
+                # # print("Best Confidence Original New: {:.2f}%".format(confidence*100))
             # proximity_factor = 1.0
             
             # if (startY + (endY-startY)/2) >= centerY:
@@ -1094,8 +1108,8 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
             
             #check if this detection is 'better' than our curr best.
             # if best_confidence < confidence && bounding box w/in bounds (valid):
-            if confidence*100 > best_confidence_original and (0 < sx and wx < rotated_image.shape[1]) and (0 < sy and hy < rotated_image.shape[0]):
-                
+            
+            if confidence*100 > best_confidence and (0 <= sx and wx <= rotated_image.shape[1]) and (0 <= sy and hy <= rotated_image.shape[0]):    
                 print("Found a better confidence: {:.2f}%".format(confidence*100))
                 #save the prev best face (2nd best face)
                 sec_best_face = best_face
@@ -1107,13 +1121,14 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
                 
                 #startX-int(abs((endX-startX)*0.2)), startY-int(abs((endY-startY)*0.2)), endX+int(abs((endX-startX)*0.2)), endY+int(abs((endY-startY)*0.2))
                 best_face = rotated_image[by:bey, bx:bex] #rotated_image #rotate_image(image, best_angle+angle)[bx:bey, bx:bex] #startY:endY, startX:endX] #rotated_image[startY:endY, startX:endX] 
-                best_confidence_original = confidence*100
+                best_confidence = confidence*100
                 best_angle = best_angle_original+angle #angle ##best_angle+angle                
             
             #draw the rectangle around the face
             
             print("##Drew rect")
             
+            ##(!) For some reason, (sx, sy, wx, hy) changes, and we can't draw it until here... it also only draws the better ones.
             drawing_copy = rotated_image.copy()
             cv2.rectangle(drawing_copy, (sx, sy), (wx, hy),
                 (255, 250, 0), 2)
@@ -1126,7 +1141,7 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
             cv2.putText(drawing_copy, text, (sx, y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.70, (0, 0, 0), 2)
             
-            ## show_image_destroy(drawing_copy, 'Faces Found in This Angle')
+            show_image_destroy(drawing_copy, 'Faces Found in This Angle')
             drawing_copy = rotated_image.copy()
     
     ## For the detections in this rotation.
