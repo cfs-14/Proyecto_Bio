@@ -5,14 +5,17 @@ import itertools as it
 import math
 import sys
 ##
-    ##
+    ##This weekend install opencv on raspberry pi.
     
-    ##(!) Not the best eyes are getting picked, esp horizontally.
+    ##Doesn't work w/ line of people: wrong eyes & wrong roi_gray & wrong final image goes to bottom right. esp. bc to detect eyes, doesn't use the face detected on last rotation check.
+    ##(!)(Done) Not the best eyes are getting picked, esp horizontally.
         ##Fixed. min_Dist_L & R were not getting updated when new smallest found in num_eyes > 2.
+        
         
     ##(!)If possible, fix the small inconsistency using point_rotation_calc to get to the eyes. 
         ##Consider the compensation used in the mat that accomodates the rotated image; this is probably the reason for the discrepancy.
         ##(!) Tried changing point_rotation_calc, using round but didn't work.
+        ##Added manual adjustment for now.
     ##Do the eye handling    
         
         ##ctrl home goes to top of page
@@ -115,6 +118,7 @@ def distance(p1,p2):
 ##def transform_image(image, angle, eye_L, eye_R, offset_pct=(0.5,0.5), dest_sz=(300.0, 300.0)): testing: (.3, .25)
 def transform_image(image, eye_L, eye_R, offset_pct=(0.15,0.15), dest_sz=(300, 300)): #offset_pct must be b/w:  [ 0.0 < (0.1 <= offset_pct <= 0.3 ) < 0.5] to make sense & work correctly
     """
+        Rotate, Crop, & Resize image.
     """
     
 ##Rotate
@@ -568,13 +572,16 @@ def point_rotation_calc(image, angle, point, pivot=None):
     # print(rotation_mat)        
     
     # find the new width and height bounds
-    bound_w = int( math.floor(height * abs_sin + width * abs_cos+2)) # hypotenuse* math.cos(angle - math.atan(height/width)
-    bound_h = int( math.floor(height * abs_cos + width * abs_sin+2)) #  hypotenuse* math.cos(angle - math.atan(width/height)    
+    
+    ##(!) The problem must be w/ the bounds. 
+    bound_w = int( math.floor(height * abs_sin + width * abs_cos)) # hypotenuse* math.cos(angle - math.atan(height/width)
+    bound_h = int( math.floor(height * abs_cos + width * abs_sin)) #  hypotenuse* math.cos(angle - math.atan(width/height)    
     
     new_center = (bound_w/2, bound_h/2)
     
     #find the point to where the (center) original center point will rotate to. 
     qx = (math.cos(radians_angle)*(center[0] - pivot[0]) - math.sin(radians_angle)*(center[1] - pivot[1])) + pivot[0]
+    ##(!) adjust qy?
     qy = (math.sin(radians_angle)*(center[0] - pivot[0]) + math.cos(radians_angle)*(center[1] - pivot[1])) + pivot[1]      
     
     
@@ -748,7 +755,7 @@ eye_detector = cv2.CascadeClassifier('C:/Users/gabav/Desktop/CarlosDirectory/Pyt
 # Load the input image and construct an input blob for the image
 # by resizing to a fixed 300x300 pixels and then normalizing it
 ##imageOne = cv2.imread('C:\Users\gabav\Desktop\CarlosDirectory\CFS_Images\line_ppl.jpg')
-image = cv2.imread('C:/Users/gabav/Desktop/CarlosDirectory/CFS_Images/Arnie_MultiEyed.jpg') #No_Eyes_Arnie.jpg') #Arnie.jpg') #walter_twizzler.jpg') #Arnie_Triclops.jpg') #2ndPic.jpg') #walter_angle.jpg') #walter_twizzler.jpg') ##walter.jpg') # #Arnie.jpg') # #   # # #line_ppl.jpg') #Arnie.jpg') # # #grp_ppl_2.jpg')
+image = cv2.imread('C:/Users/gabav/Desktop/CarlosDirectory/CFS_Images/line_ppl.jpg') #walter_angle.jpg') #Arnie_MultiEyed_R.jpg') #No_Eyes_Arnie.jpg') #Arnie.jpg') #walter_twizzler.jpg') #Arnie_Triclops.jpg') #2ndPic.jpg') # #walter_twizzler.jpg') ##walter.jpg') # #Arnie.jpg') # #   # # #line_ppl.jpg') #Arnie.jpg') # # #grp_ppl_2.jpg')
 # just get the height and width of the image.
 #(Optimization) Make the below a single unit/class.
 best_face = np.zeros(1)
@@ -1134,7 +1141,7 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
 
 ##One solution, is after noticing that best_face becomes a crop of the rotate roi_face, which is already a cropped face.
     ##So we can either save best_face as the rotated roi inside the above part, or we save it out here. I think it can just be done inside.
-
+show_image_destroy(best_face, "New best face")
 #we locate the center_point of roi_face (pivot)    
 roi_copy = roi_face.copy()
 cv2.circle(roi_copy, (roi_copy.shape[1]/2, roi_copy.shape[0]/2), 4, (0, 0, 0), -1)
@@ -1244,7 +1251,6 @@ show_image(im_test, "New point")
 
 cv2.waitKey(0)
 cv2.destroyAllWindows()
-
 ##
 
     
@@ -1600,10 +1606,12 @@ im_copy = best_face.copy()
 
 ##Draw the left and right eyes' location.
 cv2.circle(im_copy, left_eye, 3,
-    (250, 250, 250), -1)
+    (0, 0, 0), -1)
 cv2.circle(im_copy, left_eye, 2,
     (250, 250, 0), -1)
-    
+
+cv2.circle(im_copy, right_eye, 3,
+    (0, 0, 0), -1)    
 cv2.circle(im_copy, right_eye, 2,
     (250, 250, 0), -1)
 
@@ -1732,6 +1740,9 @@ cv2.destroyAllWindows()
 ##cropped_face = transform_image(eye_test_copy, (left_eye[0]+bx+bestX, left_eye[1]+by+bestY), (right_eye[0]+bx+bestX, right_eye[1]+by+bestY), (.3, .3))
 
 # cropped_face = transform_image(fimage, left_eye, right_eye, (.3, .3))
+ir = rotate_image(image, best_angle)
+
+
 cropped_face = transform_image(im_test, n_leye, n_reye, (.3, .3))
 
 ##(!)(A)(i) The prob is that w/ any of the percentages, we can't get the top of the head and the bottom of the head. Perhaps I can use dist_o to find a ratio
