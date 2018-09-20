@@ -6,9 +6,15 @@ import math
 import sys
 ##
     ##This weekend install opencv on raspberry pi.
-    ##"Eyes on Image" is wrong
+    ##Resize an image if it is too large.
+    ##So now fix the roi_image being weirdly cropped.
     
-    ##One problem is that if the confidence of the original is the best, then it needs to work with that.
+    ##Sequence of pics capture & process (2 different things)
+    ##Set up another transform_image() that gives the entire head, instead of just the face. Just for show. 
+    
+    ##"Eyes on Image" is wrong (Fixed)
+    
+    ##One problem is that if the confidence of the original is the best, then it needs to work with that. 
     
     ##Doesn't work w/ line of people: wrong eyes & wrong roi_gray & wrong final image goes to bottom right. esp. bc to detect eyes, doesn't use the face detected on last rotation check.
     ##(!)(Done) Not the best eyes are getting picked, esp horizontally.
@@ -78,6 +84,7 @@ import sys
     ##cropping at offset_pct(.1, .1) gives a gray margin or right side. Try merging?
     
     ##(!)(A)<- ctrl+f 
+    
     ##Find the right proportions to get the face.
     ##use the same jpg face in the other example to see if it matches up.
     ##
@@ -607,6 +614,110 @@ def point_rotation_calc(image, angle, point, pivot=None):
     return new_point
     
 ####################################
+
+####################################
+#image is the image w/o any rotation. Or original image.
+def pt_calc(image, angle, point, pivot=None): 
+    """
+    Calculates point to where it would have moved after using rotate_image on it.
+        The idea is basically to get the original center, rotate it about pivot.
+        Find the new center of the dest. 
+        Apply to point the translation we would apply the the rotated original center to ge to the new center of dest.
+        
+        Idea is to rotate about pivot:
+            We translate pivot to center, then apply rotation to point.
+        Then we translate back w/ the same translation applied earlier.
+        
+        But now we add the  extra translation of the new center
+        from the old center. 
+        We should have the right point. 
+        
+    """
+    radians_angle = math.radians(-1*angle) ##(!)(?) why -1* again?
+    
+    #if no pivot given, make pivot the center of image.
+    if pivot is None:
+        pivot = (image.shape[1]/2, image.shape[0]/2)
+    
+    width, height = image.shape[1], image.shape[0]
+
+    center = (width/2, height/2)
+
+    image_copy = image.copy()
+    
+    # #draw the pivot point.    
+    # cv2.circle(image_copy, pivot, 2, 
+     # (0, 255, 100), -1)
+    
+    # show_image(image_copy, 'Pivot') #_destroy
+
+    ##commented out 
+    ## print('Pivot')
+    ## print(pivot)
+    ## print('Angulo')
+    ## print(angle)
+    
+    # M = np.float32([[1,0,100],[0,1,50]])
+    # dst = cv.warpAffine(img,M,(cols,rows))
+    
+    #(Info:) matrix = cv2.getRotationMatrix2D((cols/2,rows/2),90,1)
+    #blank_rmat = cv2.getRotationMatrix2D((width/2, height/2), 0, 1.)
+    ##
+    # print('Orig Rotation Matrix')
+    # print(blank_rmat)
+    
+    ##(ch) pivot -> center
+    rotation_mat = cv2.getRotationMatrix2D(pivot, angle, 1.)#(image_copy.shape[1]/2, image_copy.shape[0]/2), angle, 1.)
+
+    # rotation calculates the cos and sin, taking absolutes of those.
+    
+    abs_cos = abs(rotation_mat[0,0]) # #math.cos(angle - 45)
+    abs_sin = abs(rotation_mat[0,1]) #  math.sin(angle - 45))
+    
+    ##
+    # print('Rotation Matrix')
+    # print(rotation_mat)        
+    
+    # find the new width and height bounds
+    bound_w = int( math.ceil(height * abs_sin + width * abs_cos+2)) # hypotenuse* math.cos(angle - math.atan(height/width)
+    bound_h = int( math.ceil(height * abs_cos + width * abs_sin+2)) #  hypotenuse* math.cos(angle - math.atan(width/height)    
+    
+    new_center = (bound_w/2, bound_h/2)
+    
+    #find the point to where the (center) original center point will rotate to. 
+    # qx = (math.cos(radians_angle)*(center[0] - pivot[0]) - math.sin(radians_angle)*(center[1] - pivot[1])) + pivot[0]
+    # qy = (math.sin(radians_angle)*(center[0] - pivot[0]) + math.cos(radians_angle)*(center[1] - pivot[1])) + pivot[1] 
+    
+    qx = (math.cos(radians_angle)*(point[0] - pivot[0]) - math.sin(radians_angle)*(point[1] - pivot[1])) + pivot[0]
+    qy = (math.sin(radians_angle)*(point[0] - pivot[0]) + math.cos(radians_angle)*(point[1] - pivot[1])) + pivot[1]        
+        
+    #math.cos(radians_angle)*(point[0] - pivot[0]) - (point[1] - pivot[1])*sin(angle);
+    
+    
+    #point[1] - pivot[1]
+    
+    # #draw the center after rotation
+    # cv2.circle(image_copy, (int(qx), int(qy)), 2, 
+     # (0, 0, 0), -1)
+     
+    # #draw the new center w/ the new bounds to see where we are translating to.
+    # cv2.circle(image_copy, new_center, 2, 
+     # (250, 250, 50), -1)
+     
+    # show_image(image_copy, "centerpoint rotated")
+    
+    #we add the translation that we are supposed to have calculated from 
+    # point[0] += new_center[0] - qx
+    # point[1] += new_center[1] - qy 
+    
+    #translate what we had to when we moved the rotated image to mat. 
+    qx += (new_center[0] - center[0])
+    qy += (new_center[1] - center[1])
+    
+    new_point = (int(qx), int(qy)) #(int(point[0] + new_center[0] - qx), int(point[1] + new_center[1] - qy))
+    return new_point 
+#################################################################################
+    
 def rotate_point(point, angle, pivot):
     """
     Rotates a point in degrees
@@ -757,8 +868,17 @@ eye_detector = cv2.CascadeClassifier('C:/Users/gabav/Desktop/CarlosDirectory/Pyt
 
 # Load the input image and construct an input blob for the image
 # by resizing to a fixed 300x300 pixels and then normalizing it
-##imageOne = cv2.imread('C:\Users\gabav\Desktop\CarlosDirectory\CFS_Images\line_ppl.jpg')
-image = cv2.imread('C:/Users/gabav/Desktop/CarlosDirectory/CFS_Images/walter_angle.jpg') #line_ppl.jpg') # #Arnie_MultiEyed_R.jpg') #No_Eyes_Arnie.jpg') #Arnie.jpg') #walter_twizzler.jpg') #Arnie_Triclops.jpg') #2ndPic.jpg') # #walter_twizzler.jpg') ##walter.jpg') # #Arnie.jpg') # #   # # #line_ppl.jpg') #Arnie.jpg') # # #grp_ppl_2.jpg')
+##imageOne = cv2.imread('C:\Users\gabav\Desktop\CarlosDirectory\CFS_Images\line_ppl.jpg') #C:\Users\gabav\Desktop\CarlosDirectory\Carlos' Stuff\Proyecto_BioTracker\Photos_Trial
+aimage = cv2.imread('C:/Users/gabav/Desktop/CarlosDirectory/CFS_Images/Photos_Trial/a44.jpg') #CarlosDirectory/CFS_Images/walter_angle.jpg') #line_ppl.jpg') # #Arnie_MultiEyed_R.jpg') #No_Eyes_Arnie.jpg') #Arnie.jpg') #walter_twizzler.jpg') #Arnie_Triclops.jpg') #2ndPic.jpg') # #walter_twizzler.jpg') ##walter.jpg') # #Arnie.jpg') # #   # # #line_ppl.jpg') #Arnie.jpg') # # #grp_ppl_2.jpg')
+
+image = aimage.copy()
+if aimage.shape[1] > 500 and aimage.shape[0] > 500:
+    show_image(image, "Before Rsz")
+    image = cv2.resize(image,None,fx=0.5, fy=0.5, interpolation = cv2.INTER_AREA)
+    show_image(image, "After Rsz")
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
 # just get the height and width of the image.
 #(Optimization) Make the below a single unit/class.
 best_face = np.zeros(1)
@@ -982,8 +1102,10 @@ temp_image = roi_face.copy()
 
 #crop the expanded face.
 
-
+##We crop from the rotated full image. This works since the original best face coords were found from the rotated full image.
 cropX, cropEndX, cropY, cropEndY = int(bestX-(bestX*0.25)), int(bestEndX+(bestX*0.25)), int(bestY-(bestY*0.25)), int(bestEndY+(bestY*0.25))
+print("\ncropX:{}\ncropEndX:{}\ncropY:{}\ncropEndY{}\n".format(cropX, cropEndX, cropY, cropEndY))
+print("\nbX:{}\nbEndX:{}\nbY:{}\nbEndY{}\n".format(bestX, bestEndX, bestY, bestEndY))
 roi_face = temp_image[cropY: cropEndY, cropX:cropEndX]
 best_face = roi_face
 
@@ -1157,7 +1279,7 @@ for angle in it.chain(range(0, -40, -10), range(10, 40, 10)):
 ##One solution, is after noticing that best_face becomes a crop of the rotate roi_face, which is already a cropped face.
     ##So we can either save best_face as the rotated roi inside the above part, or we save it out here. I think it can just be done inside.
 show_image_destroy(best_face, "New best face")
-#we locate the center_point of roi_face (pivot)    
+#we locate the center_point of roi_face (pivot)
 roi_copy = roi_face.copy()
 cv2.circle(roi_copy, (roi_copy.shape[1]/2, roi_copy.shape[0]/2), 4, (0, 0, 0), -1)
 cv2.circle(roi_copy, (roi_copy.shape[1]/2, roi_copy.shape[0]/2), 2, (200, 250, 25), -1)
@@ -1166,18 +1288,24 @@ show_image(roi_copy, "Roi pivot")
 
 ##Now we try to match the same in the image, but it will match.
 supp_angle = best_angle - best_angle_original
-image_roi = rotate_image(image, best_angle_original)
-cv2.circle(image_roi, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)), 4, (0, 0, 0), -1)
-cv2.circle(image_roi, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)), 2, (200, 250, 25), -1)
-show_image(image_roi, "Img roi pivot")
+#image_roi = rotate_image(image, best_angle_original)
+image_r = rotate_image(image, best_angle_original)
+cv2.circle(image_r, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)), 4, (0, 0, 0), -1)
+cv2.circle(image_r, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)), 2, (200, 250, 25), -1)
+show_image(image_r, "Img roi pivot")
 
 ##Now we try to rotate the point correctly in roi_face
 # # point_rotation_calc(image, angle, point, pivot. piont.
-center_r = point_rotation_calc(roi_face, supp_angle, (roi_face.shape[1]/2, roi_face.shape[0]/2))
+center_r = pt_calc(roi_face, supp_angle, (roi_face.shape[1]/2, roi_face.shape[0]/2)) #point_rotation_calc
 new_roi = rotate_image(roi_face, supp_angle)
+
+ce_r = pt_calc(roi_face, supp_angle, (roi_face.shape[1]/2, roi_face.shape[0]/2))
 
 cv2.circle(new_roi, center_r, 4, (0, 0, 0), -1)
 cv2.circle(new_roi, center_r, 2, (200, 250, 25), -1)
+
+cv2.circle(new_roi, ce_r, 4, (0, 0, 0), -1)
+cv2.circle(new_roi, ce_r, 2, (100, 100, 200), -1)
 
 show_image(new_roi, "Rotated pivot")
 
@@ -1186,11 +1314,27 @@ show_image(new_roi, "Rotated pivot")
 ##We can try keeping the points of the original rect rotated as well so to find where they align
 ##The cheap way is the way below. 
 
-new_pt = point_rotation_calc(image_roi, supp_angle, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)))
-im_test = rotate_image(image_roi, supp_angle)
+show_image_destroy(image_r, "Test Image_r")
+##The cheap way
+new_pt2 = point_rotation_calc(image_r, supp_angle, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)))
+im_test = rotate_image(image_r, supp_angle)
+new_pt = pt_calc(image_r, supp_angle, (cropX+((cropEndX - cropX)/2) , cropY+((cropEndY - cropY)/2)))
+##The image is rotated and then translated. The same way we can find the original center in the rotated image,
+## we must find the pivot point. The problem is that we must match the point in the roi
+## to the poin in the full image. Need to review this problem. 
+
+
+
+# cv2.circle(im_test, new_pt, 4, (0, 0, 0), -1)
+# cv2.circle(im_test, new_pt, 2, (200, 250, 25), -1)
+
 cv2.circle(im_test, new_pt, 4, (0, 0, 0), -1)
-cv2.circle(im_test, new_pt, 2, (200, 250, 25), -1)
-show_image(im_test, "New point")
+cv2.circle(im_test, new_pt, 2, (250, 150, 250), -1)
+
+cv2.circle(im_test, new_pt2, 4, (0, 0, 0), -1)
+cv2.circle(im_test, new_pt2, 2, (250, 250, 250), -1)
+
+show_image(im_test, "New point", True)
 
 #Now we get the translation to apply it to image_roi.
 # t_point = get_diff_translation((roi_face.shape[1]/2, roi_face.shape[0]/2), center_r)
@@ -1352,7 +1496,7 @@ while total_eyes != 2:
         for (ex, ey, ew, eh) in eye_detections:
         
             cv2.rectangle(drawing_copy, (ex, ey), (ex+ew, ey+eh), (0, 150, 150), 2)
-        show_image_destroy(drawing_copy, "Drawing Eyes")
+        show_image_destroy(drawing_copy, "Drawing Eyes", True)
         drawing_copy = roi_gray.copy()
         
     ##Here now.
@@ -1521,7 +1665,7 @@ while total_eyes != 2:
                 cv2.circle(drawing_copy, left_eye, 2, 
                     (255, 255, 0), -1)
                     
-                show_image_destroy(drawing_copy, 'This Eye')
+                show_image_destroy(drawing_copy, 'This Eye', True)
                 drawing_copy = roi_gray.copy()
                 
                 total_eyes += 1
@@ -1533,7 +1677,7 @@ while total_eyes != 2:
                 cv2.circle(drawing_copy, right_eye, 2, 
                     (255, 255, 0), -1)
 
-                show_image_destroy(drawing_copy, 'This Eye')
+                show_image_destroy(drawing_copy, 'This Eye', True)
                 drawing_copy = roi_gray.copy()
                 
                 total_eyes += 1
@@ -1611,7 +1755,7 @@ while total_eyes != 2:
             (0, 255, 0), -1)
         cv2.circle(drawing_copy, right_eye, 2, 
              (0, 255, 0), -1)
-        show_image_destroy(drawing_copy, "Eyes Found")
+        show_image_destroy(drawing_copy, "Eyes Found", True)
 ##End looking for eyes.        
         
 print("\nLeft Eye: {}, {} \t Right Eye: {}, {}".format(left_eye[0], left_eye[1], right_eye[0], right_eye[1]))
@@ -1631,7 +1775,7 @@ cv2.circle(im_copy, right_eye, 2,
     (250, 250, 0), -1)
 
 ##    
-show_image(im_copy, "Eyes on Best_Face")
+show_image(im_copy, "Eyes on Best_Face", True)
 
 n_leye = ((new_pt[0] - center_r[0]) + bx + left_eye[0], (new_pt[1] - center_r[1]) + by +left_eye[1])
 n_reye = ((new_pt[0] - center_r[0]) + bx + right_eye[0], (new_pt[1] - center_r[1]) + by +right_eye[1])
@@ -1646,7 +1790,7 @@ cv2.circle(im_test, ((new_pt[0] - center_r[0]) + bx + right_eye[0], (new_pt[1] -
     (250, 250, 250), -1)      
 
 
-show_image(im_test, "Eyes on Image")
+show_image(im_test, "Eyes on Image", True)
 
 
 # if not eye_detections: #any(map(len, eye_detections)): #passes if any of the contained items are not empty
@@ -1766,7 +1910,7 @@ cropped_face = transform_image(im_test, n_leye, n_reye, (.3, .3))
 #cropped_face = CropFace(best_face, eye_left=leftEye, eye_right=rightEye, offset_pct=(0.2,0.2), dest_sz=(300,350))#.save("arnie_10_10_200_200.jpg")
 ####
 
-show_image_destroy(cropped_face, 'Final Image')
+show_image_destroy(cropped_face, 'Final Image', True)
 
 
 ##//Now we crop and normalize the face.
